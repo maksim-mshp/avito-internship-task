@@ -62,7 +62,7 @@ func (h *Handler) createTeam(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		switch err {
 		case ErrInvalidInput:
-			writeError(w, http.StatusBadRequest, errorTeamExists, "invalid input")
+			writeError(w, http.StatusBadRequest, errorTeamExists, "team_name or members are invalid")
 			return nil
 		case ErrTeamExists:
 			writeError(w, http.StatusBadRequest, errorTeamExists, "team_name already exists")
@@ -85,7 +85,7 @@ func (h *Handler) getTeam(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		switch err {
 		case ErrInvalidInput, ErrNotFound:
-			writeError(w, http.StatusNotFound, errorNotFound, "resource not found")
+			writeError(w, http.StatusNotFound, errorNotFound, "team not found")
 			return nil
 		default:
 			return err

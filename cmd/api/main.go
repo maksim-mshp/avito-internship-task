@@ -11,6 +11,7 @@ import (
 	"avito-internship-task/internal/db"
 	"avito-internship-task/internal/httpserver"
 	"avito-internship-task/internal/teams"
+	"avito-internship-task/internal/users"
 )
 
 func main() {
@@ -28,14 +29,18 @@ func main() {
 	teamRepo := teams.NewRepository(pool)
 	teamService := teams.NewService(teamRepo)
 	teamHandler := teams.NewHandler(teamService)
+	userRepo := users.NewRepository(pool)
+	userService := users.NewService(userRepo)
+	userHandler := users.NewHandler(userService)
 
 	mux := http.NewServeMux()
 	mux.Handle("/healthz", httpserver.WithError(healthHandler))
 	teamHandler.Register(mux)
+	userHandler.Register(mux)
 
 	server := &http.Server{
 		Addr:    cfg.HTTPAddr,
-		Handler: mux,
+		Handler: httpserver.Logging(mux),
 	}
 
 	errCh := make(chan error, 1)
