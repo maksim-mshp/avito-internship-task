@@ -52,58 +52,36 @@ func TestTeamHandlers(t *testing.T) {
 	defer cleanup()
 	client := &http.Client{Timeout: 5 * time.Second}
 
-	tests := []struct {
-		name   string
-		method string
-		url    string
-		body   any
-		status int
-	}{
-		{
-			name:   "create ok",
-			method: http.MethodPost,
-			url:    "/team/add",
-			body: map[string]any{
-				"team_name": "backend",
-				"members": []map[string]any{
-					{"user_id": "u1", "username": "Alice", "is_active": true},
-					{"user_id": "u2", "username": "Bob", "is_active": false},
-				},
-			},
-			status: http.StatusCreated,
-		},
-		{
-			name:   "get ok",
-			method: http.MethodGet,
-			url:    "/team/get?team_name=backend",
-			status: http.StatusOK,
-		},
-		{
-			name:   "get not found",
-			method: http.MethodGet,
-			url:    "/team/get?team_name=missing",
-			status: http.StatusNotFound,
+	createBody := map[string]any{
+		"team_name": "backend",
+		"members": []map[string]any{
+			{"user_id": "u1", "username": "Alice", "is_active": true},
+			{"user_id": "u2", "username": "Bob", "is_active": false},
 		},
 	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			var reqBody *bytes.Reader
-			if tt.body != nil {
-				b, _ := json.Marshal(tt.body)
-				reqBody = bytes.NewReader(b)
-			} else {
-				reqBody = bytes.NewReader(nil)
-			}
-			req, _ := http.NewRequest(tt.method, server.URL+tt.url, reqBody)
-			req.Header.Set("Content-Type", "application/json")
-			resp, err := client.Do(req)
-			require.NoError(t, err)
-			defer resp.Body.Close()
-			require.Equal(t, tt.status, resp.StatusCode)
-			require.Contains(t, resp.Header.Get("Content-Type"), "application/json")
-		})
+	runRequest(t, client, http.MethodPost, server.URL+"/team/add", createBody, http.StatusCreated)
+	// duplicate team
+	resp := runRequest(t, client, http.MethodPost, server.URL+"/team/add", createBody, http.StatusBadRequest)
+	assertErrorCode(t, resp, "TEAM_EXISTS")
+
+	// get ok
+	resp = runRequest(t, client, http.MethodGet, server.URL+"/team/get?team_name=backend", nil, http.StatusOK)
+	require.NotNil(t, resp)
+	resp.Body.Close()
+
+	// get not found
+	resp = runRequest(t, client, http.MethodGet, server.URL+"/team/get?team_name=missing", nil, http.StatusNotFound)
+	resp.Body.Close()
+
+	// member exists in another team (unique user_id)
+	another := map[string]any{
+		"team_name": "another",
+		"members": []map[string]any{
+			{"user_id": "u1", "username": "Alice", "is_active": true},
+		},
 	}
+	resp = runRequest(t, client, http.MethodPost, server.URL+"/team/add", another, http.StatusBadRequest)
+	assertErrorCode(t, resp, "MEMBER_EXISTS")
 }
 
 func TestUserHandlers(t *testing.T) {
@@ -154,15 +132,17 @@ func TestPullRequestHandlers(t *testing.T) {
 		"pull_request_name": "Add feature",
 		"author_id":         "u1",
 	}
-	runRequest(t, client, server.URL+"/pullRequest/create", createReq, http.StatusCreated)
-	runRequest(t, client, server.URL+"/pullRequest/create", createReq, http.StatusConflict)
+	runRequest(t, client, http.MethodPost, server.URL+"/pullRequest/create", createReq, http.StatusCreated)
+	resp := runRequest(t, client, http.MethodPost, server.URL+"/pullRequest/create", createReq, http.StatusConflict)
+	assertErrorCode(t, resp, "PR_EXISTS")
 
 	mergeReq := map[string]any{"pull_request_id": "pr1"}
-	runRequest(t, client, server.URL+"/pullRequest/merge", mergeReq, http.StatusOK)
-	runRequest(t, client, server.URL+"/pullRequest/merge", mergeReq, http.StatusOK)
+	runRequest(t, client, http.MethodPost, server.URL+"/pullRequest/merge", mergeReq, http.StatusOK)
+	runRequest(t, client, http.MethodPost, server.URL+"/pullRequest/merge", mergeReq, http.StatusOK)
 
-	reassignReq := map[string]any{"pull_request_id": "pr1", "old_user_id": "u2"}
-	runRequest(t, client, server.URL+"/pullRequest/reassign", reassignReq, http.StatusConflict)
+	reassignReq := map[string]any{"pull_request_id": "pr1", "old_reviewer_id": "u2"}
+	resp = runRequest(t, client, http.MethodPost, server.URL+"/pullRequest/reassign", reassignReq, http.StatusConflict)
+	assertErrorCode(t, resp, "PR_MERGED")
 
 	resp, err := client.Get(server.URL + "/pullRequest/stats")
 	require.NoError(t, err)
@@ -185,11 +165,30 @@ func createTeam(client *http.Client, baseURL string) {
 	}
 }
 
-func runRequest(t *testing.T, client *http.Client, url string, body any, status int) {
-	b, _ := json.Marshal(body)
-	resp, err := client.Post(url, "application/json", bytes.NewReader(b))
+func runRequest(t *testing.T, client *http.Client, method, url string, body any, status int) *http.Response {
+	var rdr *bytes.Reader
+	if body != nil {
+		b, _ := json.Marshal(body)
+		rdr = bytes.NewReader(b)
+	} else {
+		rdr = bytes.NewReader(nil)
+	}
+	req, _ := http.NewRequest(method, url, rdr)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
 	require.Equal(t, status, resp.StatusCode)
 	require.Contains(t, resp.Header.Get("Content-Type"), "application/json")
+	return resp
+}
+
+func assertErrorCode(t *testing.T, resp *http.Response, code string) {
+	defer resp.Body.Close()
+	var payload struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&payload)
+	require.Equal(t, code, payload.Error.Code)
 }

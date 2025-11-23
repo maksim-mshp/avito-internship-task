@@ -60,6 +60,9 @@ func (s *Service) Create(ctx context.Context, team entity.Team) (entity.Team, er
 			}
 			return entity.Team{}, ErrMemberExists
 		}
+		if isUniqueViolation(err) {
+			return entity.Team{}, ErrMemberExists
+		}
 		return entity.Team{}, err
 	}
 	return team, nil
@@ -91,7 +94,15 @@ func isUniqueViolation(err error) bool {
 func uniqueTable(err error) (string, bool) {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		return pgErr.TableName, true
+		if pgErr.TableName != "" {
+			return pgErr.TableName, true
+		}
+		if strings.Contains(pgErr.ConstraintName, "teams") || strings.Contains(pgErr.Message, "teams") {
+			return "teams", true
+		}
+		if strings.Contains(pgErr.ConstraintName, "users") || strings.Contains(pgErr.Message, "users") {
+			return "users", true
+		}
 	}
 	return "", false
 }

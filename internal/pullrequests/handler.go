@@ -149,7 +149,7 @@ func (h *Handler) reassign(w http.ResponseWriter, r *http.Request) error {
 		}
 		switch {
 		case errors.Is(err, ErrInvalidInput):
-			writePRError(w, http.StatusBadRequest, codeBadRequest, "pull_request_id and old_user_id are required")
+			writePRError(w, http.StatusBadRequest, codeBadRequest, "pull_request_id and old_reviewer_id are required")
 			return nil
 		case errors.Is(err, ErrNotFound):
 			writePRError(w, http.StatusNotFound, codeNotFound, "resource not found")
