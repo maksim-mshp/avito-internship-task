@@ -2,10 +2,13 @@ package pullrequests
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 
 	"avito-internship-task/internal/entity"
 	"avito-internship-task/internal/httpserver"
+	"github.com/jackc/pgconn"
 )
 
 type Handler struct {
@@ -53,6 +56,15 @@ type errorEnvelope struct {
 	} `json:"error"`
 }
 
+const (
+	codeBadRequest  = "BAD_REQUEST"
+	codeNotFound    = "NOT_FOUND"
+	codePRExists    = "PR_EXISTS"
+	codePRMerged    = "PR_MERGED"
+	codeNotAssigned = "NOT_ASSIGNED"
+	codeNoCandidate = "NO_CANDIDATE"
+)
+
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		httpserver.RespondError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -60,7 +72,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) error {
 	}
 	var req createRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writePRError(w, http.StatusBadRequest, "NOT_FOUND", "invalid json")
+		writePRError(w, http.StatusBadRequest, codeBadRequest, "invalid json")
 		return nil
 	}
 	pr, err := h.service.Create(r.Context(), entity.PullRequest{
@@ -69,15 +81,19 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) error {
 		AuthorID:        req.AuthorID,
 	})
 	if err != nil {
-		switch err {
-		case ErrInvalidInput:
-			writePRError(w, http.StatusBadRequest, "NOT_FOUND", "pull_request_id, pull_request_name and author_id are required")
+		if isPGUnique(err) || isDuplicateErr(err) {
+			writePRError(w, http.StatusConflict, codePRExists, "PR id already exists")
 			return nil
-		case ErrNotFound:
-			writePRError(w, http.StatusNotFound, "NOT_FOUND", "author not found")
+		}
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writePRError(w, http.StatusBadRequest, codeBadRequest, "pull_request_id, pull_request_name and author_id are required")
 			return nil
-		case ErrExists:
-			writePRError(w, http.StatusConflict, "PR_EXISTS", "PR id already exists")
+		case errors.Is(err, ErrNotFound):
+			writePRError(w, http.StatusNotFound, codeNotFound, "author not found or inactive")
+			return nil
+		case errors.Is(err, ErrExists):
+			writePRError(w, http.StatusConflict, codePRExists, "PR id already exists")
 			return nil
 		default:
 			return err
@@ -94,17 +110,17 @@ func (h *Handler) merge(w http.ResponseWriter, r *http.Request) error {
 	}
 	var req mergeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writePRError(w, http.StatusBadRequest, "NOT_FOUND", "invalid json")
+		writePRError(w, http.StatusBadRequest, codeBadRequest, "invalid json")
 		return nil
 	}
 	pr, err := h.service.Merge(r.Context(), req.PullRequestID)
 	if err != nil {
-		switch err {
-		case ErrInvalidInput:
-			writePRError(w, http.StatusBadRequest, "NOT_FOUND", "pull_request_id is required")
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writePRError(w, http.StatusBadRequest, codeBadRequest, "pull_request_id is required")
 			return nil
-		case ErrNotFound:
-			writePRError(w, http.StatusNotFound, "NOT_FOUND", "PR not found")
+		case errors.Is(err, ErrNotFound):
+			writePRError(w, http.StatusNotFound, codeNotFound, "PR not found")
 			return nil
 		default:
 			return err
@@ -121,26 +137,30 @@ func (h *Handler) reassign(w http.ResponseWriter, r *http.Request) error {
 	}
 	var req reassignRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writePRError(w, http.StatusBadRequest, "NOT_FOUND", "invalid json")
+		writePRError(w, http.StatusBadRequest, codeBadRequest, "invalid json")
 		return nil
 	}
 	pr, replacement, err := h.service.Reassign(r.Context(), req.PullRequestID, req.OldUserID)
 	if err != nil {
-		switch err {
-		case ErrInvalidInput:
-			writePRError(w, http.StatusBadRequest, "NOT_FOUND", "pull_request_id and old_user_id are required")
+		if isPGUnique(err) || isDuplicateErr(err) {
+			writePRError(w, http.StatusConflict, codePRExists, "PR id already exists")
 			return nil
-		case ErrNotFound:
-			writePRError(w, http.StatusNotFound, "NOT_FOUND", "resource not found")
+		}
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writePRError(w, http.StatusBadRequest, codeBadRequest, "pull_request_id and old_user_id are required")
 			return nil
-		case ErrMerged:
-			writePRError(w, http.StatusConflict, "PR_MERGED", "cannot reassign on merged PR")
+		case errors.Is(err, ErrNotFound):
+			writePRError(w, http.StatusNotFound, codeNotFound, "resource not found")
 			return nil
-		case ErrNotAssigned:
-			writePRError(w, http.StatusConflict, "NOT_ASSIGNED", "reviewer is not assigned to this PR")
+		case errors.Is(err, ErrMerged):
+			writePRError(w, http.StatusConflict, codePRMerged, "cannot reassign on merged PR")
 			return nil
-		case ErrNoCandidate:
-			writePRError(w, http.StatusConflict, "NO_CANDIDATE", "no active replacement candidate in team")
+		case errors.Is(err, ErrNotAssigned):
+			writePRError(w, http.StatusConflict, codeNotAssigned, "reviewer is not assigned to this PR")
+			return nil
+		case errors.Is(err, ErrNoCandidate):
+			writePRError(w, http.StatusConflict, codeNoCandidate, "no active replacement candidate in team")
 			return nil
 		default:
 			return err
@@ -155,4 +175,16 @@ func writePRError(w http.ResponseWriter, status int, code, message string) {
 	e.Error.Code = code
 	e.Error.Message = message
 	httpserver.RespondJSON(w, status, e)
+}
+
+func isPGUnique(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
+	}
+	return false
+}
+
+func isDuplicateErr(err error) bool {
+	return strings.Contains(err.Error(), "duplicate key value")
 }

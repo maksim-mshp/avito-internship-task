@@ -2,6 +2,7 @@ package teams
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"avito-internship-task/internal/entity"
@@ -35,6 +36,7 @@ type errorCode string
 const (
 	errorTeamExists errorCode = "TEAM_EXISTS"
 	errorNotFound   errorCode = "NOT_FOUND"
+	errorBadRequest errorCode = "BAD_REQUEST"
 )
 
 type errorResponse struct {
@@ -51,7 +53,7 @@ func (h *Handler) createTeam(w http.ResponseWriter, r *http.Request) error {
 	}
 	var req createTeamRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errorTeamExists, "invalid json")
+		writeError(w, http.StatusBadRequest, errorBadRequest, "invalid json")
 		return nil
 	}
 	team := entity.Team{
@@ -60,11 +62,11 @@ func (h *Handler) createTeam(w http.ResponseWriter, r *http.Request) error {
 	}
 	team, err := h.service.Create(r.Context(), team)
 	if err != nil {
-		switch err {
-		case ErrInvalidInput:
-			writeError(w, http.StatusBadRequest, errorTeamExists, "team_name or members are invalid")
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeError(w, http.StatusBadRequest, errorBadRequest, "team_name or members are invalid")
 			return nil
-		case ErrTeamExists:
+		case errors.Is(err, ErrTeamExists):
 			writeError(w, http.StatusBadRequest, errorTeamExists, "team_name already exists")
 			return nil
 		default:
@@ -83,8 +85,8 @@ func (h *Handler) getTeam(w http.ResponseWriter, r *http.Request) error {
 	teamName := r.URL.Query().Get("team_name")
 	team, err := h.service.Get(r.Context(), teamName)
 	if err != nil {
-		switch err {
-		case ErrInvalidInput, ErrNotFound:
+		switch {
+		case errors.Is(err, ErrInvalidInput), errors.Is(err, ErrNotFound):
 			writeError(w, http.StatusNotFound, errorNotFound, "team not found")
 			return nil
 		default:

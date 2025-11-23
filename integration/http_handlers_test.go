@@ -52,28 +52,58 @@ func TestTeamHandlers(t *testing.T) {
 	defer cleanup()
 	client := &http.Client{Timeout: 5 * time.Second}
 
-	body := map[string]any{
-		"team_name": "backend",
-		"members": []map[string]any{
-			{"user_id": "u1", "username": "Alice", "is_active": true},
-			{"user_id": "u2", "username": "Bob", "is_active": false},
+	tests := []struct {
+		name   string
+		method string
+		url    string
+		body   any
+		status int
+	}{
+		{
+			name:   "create ok",
+			method: http.MethodPost,
+			url:    "/team/add",
+			body: map[string]any{
+				"team_name": "backend",
+				"members": []map[string]any{
+					{"user_id": "u1", "username": "Alice", "is_active": true},
+					{"user_id": "u2", "username": "Bob", "is_active": false},
+				},
+			},
+			status: http.StatusCreated,
+		},
+		{
+			name:   "get ok",
+			method: http.MethodGet,
+			url:    "/team/get?team_name=backend",
+			status: http.StatusOK,
+		},
+		{
+			name:   "get not found",
+			method: http.MethodGet,
+			url:    "/team/get?team_name=missing",
+			status: http.StatusNotFound,
 		},
 	}
-	b, _ := json.Marshal(body)
-	resp, err := client.Post(server.URL+"/team/add", "application/json", bytes.NewReader(b))
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusCreated, resp.StatusCode)
-
-	resp, err = client.Get(server.URL + "/team/get?team_name=backend")
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	resp, err = client.Get(server.URL + "/team/get?team_name=missing")
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			var reqBody *bytes.Reader
+			if tt.body != nil {
+				b, _ := json.Marshal(tt.body)
+				reqBody = bytes.NewReader(b)
+			} else {
+				reqBody = bytes.NewReader(nil)
+			}
+			req, _ := http.NewRequest(tt.method, server.URL+tt.url, reqBody)
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			require.Equal(t, tt.status, resp.StatusCode)
+			require.Contains(t, resp.Header.Get("Content-Type"), "application/json")
+		})
+	}
 }
 
 func TestUserHandlers(t *testing.T) {
@@ -83,19 +113,33 @@ func TestUserHandlers(t *testing.T) {
 
 	createTeam(client, server.URL)
 
-	reqBody := map[string]any{"user_id": "u1", "is_active": false}
-	b, _ := json.Marshal(reqBody)
-	resp, err := client.Post(server.URL+"/users/setIsActive", "application/json", bytes.NewReader(b))
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	reqBody = map[string]any{"user_id": "missing", "is_active": true}
-	b, _ = json.Marshal(reqBody)
-	resp, err = client.Post(server.URL+"/users/setIsActive", "application/json", bytes.NewReader(b))
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	tests := []struct {
+		name   string
+		body   any
+		status int
+	}{
+		{
+			name:   "ok",
+			body:   map[string]any{"user_id": "u1", "is_active": false},
+			status: http.StatusOK,
+		},
+		{
+			name:   "not found",
+			body:   map[string]any{"user_id": "missing", "is_active": true},
+			status: http.StatusNotFound,
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			b, _ := json.Marshal(tt.body)
+			resp, err := client.Post(server.URL+"/users/setIsActive", "application/json", bytes.NewReader(b))
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			require.Equal(t, tt.status, resp.StatusCode)
+			require.Contains(t, resp.Header.Get("Content-Type"), "application/json")
+		})
+	}
 }
 
 func TestPullRequestHandlers(t *testing.T) {
@@ -105,35 +149,20 @@ func TestPullRequestHandlers(t *testing.T) {
 
 	createTeam(client, server.URL)
 
-	prBody := map[string]any{
+	createReq := map[string]any{
 		"pull_request_id":   "pr1",
 		"pull_request_name": "Add feature",
 		"author_id":         "u1",
 	}
-	b, _ := json.Marshal(prBody)
-	resp, err := client.Post(server.URL+"/pullRequest/create", "application/json", bytes.NewReader(b))
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	runRequest(t, client, server.URL+"/pullRequest/create", createReq, http.StatusCreated)
+	runRequest(t, client, server.URL+"/pullRequest/create", createReq, http.StatusConflict)
 
-	mergeBody := map[string]any{"pull_request_id": "pr1"}
-	b, _ = json.Marshal(mergeBody)
-	resp, err = client.Post(server.URL+"/pullRequest/merge", "application/json", bytes.NewReader(b))
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	mergeReq := map[string]any{"pull_request_id": "pr1"}
+	runRequest(t, client, server.URL+"/pullRequest/merge", mergeReq, http.StatusOK)
+	runRequest(t, client, server.URL+"/pullRequest/merge", mergeReq, http.StatusOK)
 
-	resp, err = client.Post(server.URL+"/pullRequest/merge", "application/json", bytes.NewReader(b))
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	reassignBody := map[string]any{"pull_request_id": "pr1", "old_user_id": "u2"}
-	b, _ = json.Marshal(reassignBody)
-	resp, err = client.Post(server.URL+"/pullRequest/reassign", "application/json", bytes.NewReader(b))
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusConflict, resp.StatusCode)
+	reassignReq := map[string]any{"pull_request_id": "pr1", "old_user_id": "u2"}
+	runRequest(t, client, server.URL+"/pullRequest/reassign", reassignReq, http.StatusConflict)
 }
 
 func createTeam(client *http.Client, baseURL string) {
@@ -149,4 +178,13 @@ func createTeam(client *http.Client, baseURL string) {
 	if resp != nil {
 		resp.Body.Close()
 	}
+}
+
+func runRequest(t *testing.T, client *http.Client, url string, body any, status int) {
+	b, _ := json.Marshal(body)
+	resp, err := client.Post(url, "application/json", bytes.NewReader(b))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, status, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Content-Type"), "application/json")
 }

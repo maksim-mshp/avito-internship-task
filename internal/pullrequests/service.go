@@ -56,6 +56,9 @@ func (s *Service) Create(ctx context.Context, pr entity.PullRequest) (entity.Pul
 		}
 		return entity.PullRequest{}, err
 	}
+	if !author.IsActive {
+		return entity.PullRequest{}, ErrNotFound
+	}
 
 	candidates, err := s.repo.GetActiveTeamMembers(ctx, author.TeamName)
 	if err != nil {
@@ -137,6 +140,9 @@ func (s *Service) Reassign(ctx context.Context, prID, oldReviewer string) (entit
 			return entity.PullRequest{}, "", ErrNotFound
 		}
 		return entity.PullRequest{}, "", err
+	}
+	if !reviewer.IsActive {
+		return entity.PullRequest{}, "", ErrNotFound
 	}
 	candidates, err := s.repo.GetActiveTeamMembers(ctx, reviewer.TeamName)
 	if err != nil {

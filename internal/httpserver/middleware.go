@@ -36,7 +36,7 @@ func Recover(next HandlerFunc) http.Handler {
 		}()
 		if err := next(recorder, r); err != nil {
 			log.Printf("error: %v", err)
-			RespondError(recorder, http.StatusInternalServerError, err.Error())
+			RespondError(recorder, http.StatusInternalServerError, "internal error")
 			return
 		}
 		if recorder.status >= 500 {

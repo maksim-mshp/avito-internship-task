@@ -2,6 +2,7 @@ package users
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"avito-internship-task/internal/entity"
@@ -47,11 +48,11 @@ func (h *Handler) setIsActive(w http.ResponseWriter, r *http.Request) error {
 	}
 	user, err := h.service.SetIsActive(r.Context(), req.UserID, req.IsActive)
 	if err != nil {
-		switch err {
-		case ErrInvalidInput:
+		switch {
+		case errors.Is(err, ErrInvalidInput):
 			writeUserError(w, http.StatusBadRequest, "NOT_FOUND", "user_id is required")
 			return nil
-		case ErrNotFound:
+		case errors.Is(err, ErrNotFound):
 			writeUserError(w, http.StatusNotFound, "NOT_FOUND", "user not found")
 			return nil
 		default:
@@ -70,11 +71,11 @@ func (h *Handler) getReview(w http.ResponseWriter, r *http.Request) error {
 	userID := r.URL.Query().Get("user_id")
 	prs, err := h.service.GetReview(r.Context(), userID)
 	if err != nil {
-		switch err {
-		case ErrInvalidInput:
+		switch {
+		case errors.Is(err, ErrInvalidInput):
 			writeUserError(w, http.StatusBadRequest, "NOT_FOUND", "user_id is required")
 			return nil
-		case ErrNotFound:
+		case errors.Is(err, ErrNotFound):
 			writeUserError(w, http.StatusNotFound, "NOT_FOUND", "user not found")
 			return nil
 		default:
