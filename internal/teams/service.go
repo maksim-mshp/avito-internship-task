@@ -13,6 +13,7 @@ var (
 	ErrInvalidInput = errors.New("invalid input")
 	ErrTeamExists   = errors.New("team exists")
 	ErrNotFound     = errors.New("not found")
+	ErrMemberExists = errors.New("member exists")
 )
 
 type Service struct {
@@ -53,8 +54,11 @@ func (s *Service) Create(ctx context.Context, team entity.Team) (entity.Team, er
 	}
 	team.Members = normalized
 	if err := s.repo.Create(ctx, team); err != nil {
-		if isUniqueViolation(err) {
-			return entity.Team{}, ErrTeamExists
+		if table, ok := uniqueTable(err); ok {
+			if table == "teams" {
+				return entity.Team{}, ErrTeamExists
+			}
+			return entity.Team{}, ErrMemberExists
 		}
 		return entity.Team{}, err
 	}
@@ -82,4 +86,12 @@ func isUniqueViolation(err error) bool {
 		return pgErr.Code == "23505"
 	}
 	return false
+}
+
+func uniqueTable(err error) (string, bool) {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return pgErr.TableName, true
+	}
+	return "", false
 }

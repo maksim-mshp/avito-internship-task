@@ -15,6 +15,5 @@ type PullRequest struct {
 	AuthorID        string     `json:"author_id"`
 	Status          string     `json:"status"`
 	Assigned        []string   `json:"assigned_reviewers"`
-	CreatedAt       *time.Time `json:"createdAt,omitempty"`
 	MergedAt        *time.Time `json:"mergedAt,omitempty"`
 }

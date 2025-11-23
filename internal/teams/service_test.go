@@ -11,18 +11,30 @@ import (
 )
 
 type teamRepoStub struct {
-	teams map[string]entity.Team
+	teams           map[string]entity.Team
+	existingMembers map[string]struct{}
 }
 
 func newTeamRepoStub() *teamRepoStub {
-	return &teamRepoStub{teams: make(map[string]entity.Team)}
+	return &teamRepoStub{
+		teams:           make(map[string]entity.Team),
+		existingMembers: make(map[string]struct{}),
+	}
 }
 
 func (r *teamRepoStub) Create(ctx context.Context, team entity.Team) error {
 	if _, ok := r.teams[team.TeamName]; ok {
-		return &pgconn.PgError{Code: "23505"}
+		return &pgconn.PgError{Code: "23505", TableName: "teams"}
+	}
+	for _, m := range team.Members {
+		if _, ok := r.existingMembers[m.UserID]; ok {
+			return &pgconn.PgError{Code: "23505", TableName: "users"}
+		}
 	}
 	r.teams[team.TeamName] = team
+	for _, m := range team.Members {
+		r.existingMembers[m.UserID] = struct{}{}
+	}
 	return nil
 }
 
@@ -69,6 +81,18 @@ func TestServiceCreate(t *testing.T) {
 			}(),
 			input:     entity.Team{TeamName: "backend", Members: []entity.TeamMember{{UserID: "u2", Username: "Bob"}}},
 			wantErr:   ErrTeamExists,
+			wantCount: 1,
+		},
+		{
+			name: "member exists",
+			repo: func() *teamRepoStub {
+				r := newTeamRepoStub()
+				r.teams["other"] = entity.Team{TeamName: "other"}
+				r.existingMembers["u1"] = struct{}{}
+				return r
+			}(),
+			input:     entity.Team{TeamName: "backend", Members: []entity.TeamMember{{UserID: "u1", Username: "Alice"}}},
+			wantErr:   ErrMemberExists,
 			wantCount: 1,
 		},
 	}

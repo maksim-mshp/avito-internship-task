@@ -38,7 +38,7 @@ type mergeRequest struct {
 
 type reassignRequest struct {
 	PullRequestID string `json:"pull_request_id"`
-	OldUserID     string `json:"old_user_id"`
+	OldReviewerID string `json:"old_reviewer_id"`
 }
 
 type prEnvelope struct {
@@ -141,7 +141,7 @@ func (h *Handler) reassign(w http.ResponseWriter, r *http.Request) error {
 		writePRError(w, http.StatusBadRequest, codeBadRequest, "invalid json")
 		return nil
 	}
-	pr, replacement, err := h.service.Reassign(r.Context(), req.PullRequestID, req.OldUserID)
+	pr, replacement, err := h.service.Reassign(r.Context(), req.PullRequestID, req.OldReviewerID)
 	if err != nil {
 		if isPGUnique(err) || isDuplicateErr(err) {
 			writePRError(w, http.StatusConflict, codePRExists, "PR id already exists")

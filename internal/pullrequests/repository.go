@@ -76,11 +76,11 @@ INSERT INTO pr_reviewers (pull_request_id, reviewer_id) VALUES ($1, $2)
 
 func (r *Repository) Get(ctx context.Context, id string) (entity.PullRequest, error) {
 	row := r.db.QueryRow(ctx, `
-SELECT pull_request_id, pull_request_name, author_id, status, created_at, merged_at
+SELECT pull_request_id, pull_request_name, author_id, status, merged_at
 FROM pull_requests WHERE pull_request_id = $1
 `, id)
 	var pr entity.PullRequest
-	if err := row.Scan(&pr.PullRequestID, &pr.PullRequestName, &pr.AuthorID, &pr.Status, &pr.CreatedAt, &pr.MergedAt); err != nil {
+	if err := row.Scan(&pr.PullRequestID, &pr.PullRequestName, &pr.AuthorID, &pr.Status, &pr.MergedAt); err != nil {
 		return entity.PullRequest{}, err
 	}
 

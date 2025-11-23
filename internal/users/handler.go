@@ -36,6 +36,11 @@ type reviewResponse struct {
 	PullRequests []entity.PullRequestShort `json:"pull_requests"`
 }
 
+const (
+	codeBadRequest = "BAD_REQUEST"
+	codeNotFound   = "NOT_FOUND"
+)
+
 func (h *Handler) setIsActive(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		httpserver.RespondError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -43,17 +48,17 @@ func (h *Handler) setIsActive(w http.ResponseWriter, r *http.Request) error {
 	}
 	var req setActiveRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeUserError(w, http.StatusBadRequest, "NOT_FOUND", "invalid json")
+		writeUserError(w, http.StatusBadRequest, codeBadRequest, "invalid json")
 		return nil
 	}
 	user, err := h.service.SetIsActive(r.Context(), req.UserID, req.IsActive)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
-			writeUserError(w, http.StatusBadRequest, "NOT_FOUND", "user_id is required")
+			writeUserError(w, http.StatusBadRequest, codeBadRequest, "user_id is required")
 			return nil
 		case errors.Is(err, ErrNotFound):
-			writeUserError(w, http.StatusNotFound, "NOT_FOUND", "user not found")
+			writeUserError(w, http.StatusNotFound, codeNotFound, "user not found")
 			return nil
 		default:
 			return err
@@ -73,10 +78,10 @@ func (h *Handler) getReview(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
-			writeUserError(w, http.StatusBadRequest, "NOT_FOUND", "user_id is required")
+			writeUserError(w, http.StatusBadRequest, codeBadRequest, "user_id is required")
 			return nil
 		case errors.Is(err, ErrNotFound):
-			writeUserError(w, http.StatusNotFound, "NOT_FOUND", "user not found")
+			writeUserError(w, http.StatusNotFound, codeNotFound, "user not found")
 			return nil
 		default:
 			return err

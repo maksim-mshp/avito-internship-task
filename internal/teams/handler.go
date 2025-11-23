@@ -34,9 +34,10 @@ type teamEnvelope struct {
 type errorCode string
 
 const (
-	errorTeamExists errorCode = "TEAM_EXISTS"
-	errorNotFound   errorCode = "NOT_FOUND"
-	errorBadRequest errorCode = "BAD_REQUEST"
+	errorTeamExists   errorCode = "TEAM_EXISTS"
+	errorNotFound     errorCode = "NOT_FOUND"
+	errorBadRequest   errorCode = "BAD_REQUEST"
+	errorMemberExists errorCode = "MEMBER_EXISTS"
 )
 
 type errorResponse struct {
@@ -68,6 +69,9 @@ func (h *Handler) createTeam(w http.ResponseWriter, r *http.Request) error {
 			return nil
 		case errors.Is(err, ErrTeamExists):
 			writeError(w, http.StatusBadRequest, errorTeamExists, "team_name already exists")
+			return nil
+		case errors.Is(err, ErrMemberExists):
+			writeError(w, http.StatusBadRequest, errorMemberExists, "user_id already exists")
 			return nil
 		default:
 			return err
