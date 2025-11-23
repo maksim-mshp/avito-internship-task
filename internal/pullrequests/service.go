@@ -21,11 +21,20 @@ var (
 )
 
 type Service struct {
-	repo *Repository
+	repo Repo
 	rand *rand.Rand
 }
 
-func NewService(repo *Repository) *Service {
+type Repo interface {
+	GetUser(ctx context.Context, userID string) (entity.User, error)
+	GetActiveTeamMembers(ctx context.Context, teamName string) ([]entity.User, error)
+	Create(ctx context.Context, pr entity.PullRequest) error
+	Get(ctx context.Context, id string) (entity.PullRequest, error)
+	Merge(ctx context.Context, id string, ts time.Time) error
+	ReplaceReviewer(ctx context.Context, prID, oldID, newID string) error
+}
+
+func NewService(repo Repo) *Service {
 	return &Service{
 		repo: repo,
 		rand: rand.New(rand.NewSource(time.Now().UnixNano())),

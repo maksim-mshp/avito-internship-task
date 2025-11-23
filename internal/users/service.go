@@ -14,10 +14,16 @@ var (
 )
 
 type Service struct {
-	repo *Repository
+	repo Repo
 }
 
-func NewService(repo *Repository) *Service {
+type Repo interface {
+	SetIsActive(ctx context.Context, userID string, active bool) (entity.User, error)
+	Get(ctx context.Context, userID string) (entity.User, error)
+	GetReview(ctx context.Context, userID string) ([]entity.PullRequestShort, error)
+}
+
+func NewService(repo Repo) *Service {
 	return &Service{repo: repo}
 }
 
