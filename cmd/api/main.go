@@ -1,62 +1,65 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
+	"context"
 	"log"
 	"net/http"
+	"os/signal"
+	"syscall"
+
+	"avito-internship-task/internal/config"
+	"avito-internship-task/internal/db"
+	"avito-internship-task/internal/httpserver"
+	"avito-internship-task/internal/teams"
 )
 
-type appHandler func(http.ResponseWriter, *http.Request) error
-
-type errorResponse struct {
-	Error string `json:"error"`
-}
-
-func errorMiddleware(next appHandler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				respondError(w, http.StatusInternalServerError, fmt.Sprint(rec))
-			}
-		}()
-
-		if err := next(w, r); err != nil {
-			respondError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-	})
-}
-
-func healthHandler(w http.ResponseWriter, _ *http.Request) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, err := w.Write([]byte(`{"status":"ok"}`))
-	return err
-}
-
-func respondError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	body, err := json.Marshal(errorResponse{Error: msg})
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	_, _ = w.Write(body)
-}
-
 func main() {
+	cfg := config.Load()
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := db.Connect(ctx, cfg.DBURL)
+	if err != nil {
+		log.Fatalf("db connect error: %v", err)
+	}
+	defer pool.Close()
+
+	teamRepo := teams.NewRepository(pool)
+	teamService := teams.NewService(teamRepo)
+	teamHandler := teams.NewHandler(teamService)
+
 	mux := http.NewServeMux()
-	mux.Handle("/healthz", errorMiddleware(healthHandler))
+	mux.Handle("/healthz", httpserver.WithError(healthHandler))
+	teamHandler.Register(mux)
 
 	server := &http.Server{
-		Addr:    ":8080",
+		Addr:    cfg.HTTPAddr,
 		Handler: mux,
 	}
 
-	log.Println("starting server on :8080")
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("server error: %v", err)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.ListenAndServe()
+	}()
+
+	select {
+	case err := <-errCh:
+		if err != nil && err != http.ErrServerClosed {
+			log.Fatalf("server error: %v", err)
+		}
+	case <-ctx.Done():
 	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("shutdown error: %v", err)
+	}
+}
+
+func healthHandler(w http.ResponseWriter, _ *http.Request) error {
+	httpserver.RespondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	return nil
 }

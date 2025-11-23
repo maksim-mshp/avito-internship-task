@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${PGUSER:-postgres}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-postgres}
+      POSTGRES_DB: ${PGDATABASE:-app}
+    ports:
+      - "${PGPORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-postgres} -d ${PGDATABASE:-app}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      HTTP_ADDR: ${HTTP_ADDR:-:8080}
+      HTTP_SHUTDOWN_TIMEOUT: ${HTTP_SHUTDOWN_TIMEOUT:-5}
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@db:5432/app?sslmode=disable}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:
