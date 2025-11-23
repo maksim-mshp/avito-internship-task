@@ -88,6 +88,17 @@ func (r *prRepoStub) ReplaceReviewer(ctx context.Context, prID, oldID, newID str
 	return nil
 }
 
+func (r *prRepoStub) StatsAssignments(ctx context.Context) (map[string]int, error) {
+	result := make(map[string]int)
+	for prID, revs := range r.reviewers {
+		_ = prID
+		for _, id := range revs {
+			result[id]++
+		}
+	}
+	return result, nil
+}
+
 func TestCreate(t *testing.T) {
 	ctx := context.Background()
 	repo := newPRRepoStub()

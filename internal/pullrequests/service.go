@@ -32,6 +32,7 @@ type Repo interface {
 	Get(ctx context.Context, id string) (entity.PullRequest, error)
 	Merge(ctx context.Context, id string, ts time.Time) error
 	ReplaceReviewer(ctx context.Context, prID, oldID, newID string) error
+	StatsAssignments(ctx context.Context) (map[string]int, error)
 }
 
 func NewService(repo Repo) *Service {
@@ -195,6 +196,10 @@ func (s *Service) pickRandom(users []entity.User, count int) []string {
 		selected = append(selected, users[perm[i]].UserID)
 	}
 	return selected
+}
+
+func (s *Service) Stats(ctx context.Context) (map[string]int, error) {
+	return s.repo.StatsAssignments(ctx)
 }
 
 func isUniqueViolation(err error) bool {

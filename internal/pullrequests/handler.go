@@ -23,6 +23,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("/pullRequest/create", httpserver.WithError(h.create))
 	mux.Handle("/pullRequest/merge", httpserver.WithError(h.merge))
 	mux.Handle("/pullRequest/reassign", httpserver.WithError(h.reassign))
+	mux.Handle("/pullRequest/stats", httpserver.WithError(h.stats))
 }
 
 type createRequest struct {
@@ -183,6 +184,19 @@ func isPGUnique(err error) bool {
 		return pgErr.Code == "23505"
 	}
 	return false
+}
+
+func (h *Handler) stats(w http.ResponseWriter, r *http.Request) error {
+	if r.Method != http.MethodGet {
+		httpserver.RespondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return nil
+	}
+	stats, err := h.service.Stats(r.Context())
+	if err != nil {
+		return err
+	}
+	httpserver.RespondJSON(w, http.StatusOK, map[string]any{"assignments": stats})
+	return nil
 }
 
 func isDuplicateErr(err error) bool {

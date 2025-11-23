@@ -163,6 +163,11 @@ func TestPullRequestHandlers(t *testing.T) {
 
 	reassignReq := map[string]any{"pull_request_id": "pr1", "old_user_id": "u2"}
 	runRequest(t, client, server.URL+"/pullRequest/reassign", reassignReq, http.StatusConflict)
+
+	resp, err := client.Get(server.URL + "/pullRequest/stats")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
 func createTeam(client *http.Client, baseURL string) {

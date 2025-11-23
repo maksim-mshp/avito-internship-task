@@ -141,3 +141,24 @@ func (r *Repository) loadReviewers(ctx context.Context, prID string) ([]string, 
 func isNotFound(err error) bool {
 	return err != nil && err == pgx.ErrNoRows
 }
+
+func (r *Repository) StatsAssignments(ctx context.Context) (map[string]int, error) {
+	rows, err := r.db.Query(ctx, `SELECT reviewer_id, COUNT(*) FROM pr_reviewers GROUP BY reviewer_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	stats := make(map[string]int)
+	for rows.Next() {
+		var id string
+		var cnt int
+		if err := rows.Scan(&id, &cnt); err != nil {
+			return nil, err
+		}
+		stats[id] = cnt
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return stats, nil
+}
