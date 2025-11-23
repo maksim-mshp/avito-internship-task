@@ -10,6 +10,7 @@ import (
 	"avito-internship-task/internal/config"
 	"avito-internship-task/internal/db"
 	"avito-internship-task/internal/httpserver"
+	"avito-internship-task/internal/pullrequests"
 	"avito-internship-task/internal/teams"
 	"avito-internship-task/internal/users"
 )
@@ -32,11 +33,15 @@ func main() {
 	userRepo := users.NewRepository(pool)
 	userService := users.NewService(userRepo)
 	userHandler := users.NewHandler(userService)
+	prRepo := pullrequests.NewRepository(pool)
+	prService := pullrequests.NewService(prRepo)
+	prHandler := pullrequests.NewHandler(prService)
 
 	mux := http.NewServeMux()
 	mux.Handle("/healthz", httpserver.WithError(healthHandler))
 	teamHandler.Register(mux)
 	userHandler.Register(mux)
+	prHandler.Register(mux)
 
 	server := &http.Server{
 		Addr:    cfg.HTTPAddr,
